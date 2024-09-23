@@ -1,41 +1,45 @@
-﻿#include <iostream>
+﻿// Pool Node 안전성 테스트 필요
+#include <iostream>
 #include <crtdbg.h>
 #include <thread>
 #include <chrono>
 #include "MemoryPool.h"
 //C_Utility::CCrashDump dump;
 
-const int alsize = 20;
-const int ssssize = 1000; // 100 ~ 10000
+const int allocSize = 40;
+const int ExeCntPerLoop = 3200; // 100 ~ 10000
 const int threadCnt = 8;
+
+
 struct sts
 {
 	sts() {}
 	~sts() {}
-	char c[alsize]{};
+	char c[allocSize]{};
 };
-int a = 10000;
-
+int loopCnt = 0100000;
 void CheckMyPool()
 {
+	//C_Memory::PoolInfo::Init();
 	{
 		std::thread t[threadCnt];
 
 		for (int j = 0; j < threadCnt; j++)
 		{
 			t[j] = std::thread([=]() {
+				poolMgr.Nothing();
 				int st = 0;
-				void** arr = new void* [ssssize];
+				void** arr = new void* [ExeCntPerLoop];
 
 				auto start = std::chrono::high_resolution_clock::now();
-				while (st < a)
+				while (st < loopCnt)
 				{
-					for (int i = 0; i < ssssize; i++)
+					for (int i = 0; i < ExeCntPerLoop; i++)
 					{
 						arr[i] = static_cast<int*>(poolMgr.Alloc(sizeof(sts)));
 					}
 
-					for (int i = 0; i < ssssize; i++)
+					for (int i = 0; i < ExeCntPerLoop; i++)
 					{
 						poolMgr.Free(arr[i]);
 					}
@@ -51,19 +55,19 @@ void CheckMyPool()
 			);
 		}
 
-		{
+		/*{
 			int st = 0;
-			void** arr = new void* [ssssize];
+			void** arr = new void* [ExeCntPerLoop];
 			{
 				auto start = std::chrono::high_resolution_clock::now();
-				while (st < a)
+				while (st < loopCnt)
 				{
-					for (int i = 0; i < ssssize; i++)
+					for (int i = 0; i < ExeCntPerLoop; i++)
 					{
 						arr[i] = poolMgr.Alloc(sizeof(sts));
 					}
 
-					for (int i = 0; i < ssssize; i++)
+					for (int i = 0; i < ExeCntPerLoop; i++)
 					{
 						poolMgr.Free(arr[i]);
 					}
@@ -76,7 +80,7 @@ void CheckMyPool()
 				printf("main 스레드 %lf 초 경과\n", elapsed);
 			}
 			delete[] arr;
-		}
+		}*/
 		for (auto& th : t)
 		{
 			if (th.joinable())
@@ -92,17 +96,17 @@ void CheckNew()
 	{
 		t[j] = std::thread([=]() {
 			int st = 0;
-			void** arr = new void* [ssssize];
+			void** arr = new void* [ExeCntPerLoop];
 
 			auto start = std::chrono::high_resolution_clock::now();
-			while (st < a)
+			while (st < loopCnt)
 			{
-				for (int i = 0; i < ssssize; i++)
+				for (int i = 0; i < ExeCntPerLoop; i++)
 				{
 					arr[i] = new sts;
 				}
 
-				for (int i = 0; i < ssssize; i++)
+				for (int i = 0; i < ExeCntPerLoop; i++)
 				{
 					delete (arr[i]);
 				}
@@ -119,30 +123,30 @@ void CheckNew()
 	}
 
 	{
-		int st = 0;
-		void** arr = new void* [ssssize];
-		{
-			auto start = std::chrono::high_resolution_clock::now();
-			while (st < a)
-			{
-				for (int i = 0; i < ssssize; i++)
-				{
-					arr[i] = new sts;
-				}
+		//int st = 0;
+		//void** arr = new void* [ExeCntPerLoop];
+		//{
+		//	auto start = std::chrono::high_resolution_clock::now();
+		//	while (st < loopCnt)
+		//	{
+		//		for (int i = 0; i < ExeCntPerLoop; i++)
+		//		{
+		//			arr[i] = new sts;
+		//		}
 
-				for (int i = 0; i < ssssize; i++)
-				{
-					delete (arr[i]);
-				}
+		//		for (int i = 0; i < ExeCntPerLoop; i++)
+		//		{
+		//			delete (arr[i]);
+		//		}
 
-				++st;
-			}
+		//		++st;
+		//	}
 
-			auto end = std::chrono::high_resolution_clock::now();
-			std::chrono::duration<double> elapsed = end - start;
-			printf("new - main 스레드 %lf 초 경과\n", elapsed);
-		}
-		delete[] arr;
+		//	auto end = std::chrono::high_resolution_clock::now();
+		//	std::chrono::duration<double> elapsed = end - start;
+		//	printf("new - main 스레드 %lf 초 경과\n", elapsed);
+		//}
+		//delete[] arr;
 
 		for (auto& th : t)
 		{

@@ -7,6 +7,7 @@ using namespace C_Memory;
 
 thread_local PoolManager poolMgr;
 
+uint PoolInfo::_poolTable[MAX_ALLOC_SIZE + 1];
 
 
 /*--------------------------
@@ -17,7 +18,7 @@ C_Memory::MemoryProtector::MemoryProtector(uint size) : _size(size), _frontGuard
 
 
 /*---------------------------------------------------------------------------------------
-  Mempool::Alloc : [header + Guard(4bytes) + data + Guard(4bytes) + NextPtr] => [data]
+  Mempool::Alloc : [header + Guard(4bytes) + data + Guard(4bytes)]    +    NextPtr => [data]
 					 ก่
 					ptr
 ---------------------------------------------------------------------------------------*/
@@ -29,12 +30,6 @@ void* C_Memory::MemoryProtector::Attach(void* ptr, uint size)
 
 	*pRightGuard = GUARD_VALUE;
 
-	if (size > MAX_ALLOC_SIZE)
-	{
-		// set NextPtr nullptr
-		PUINT_PTR nextPtr = reinterpret_cast<PUINT_PTR>(++pRightGuard);
-		*nextPtr = 0;
-	}
 	return static_cast<MemoryProtector*>(ptr) + 1;
 }
 
@@ -42,7 +37,7 @@ void* C_Memory::MemoryProtector::Attach(void* ptr, uint size)
 /*-------------------------------------------------------------------------------
 										   [ptr]
 											ก้
-  Mempool::Free : [header + Guard(4bytes) + data + Guard(4bytes) + NextPtr]
+  Mempool::Free : [header + Guard(4bytes) + data + Guard(4bytes)]       +       NextPtr
 -------------------------------------------------------------------------------*/
 C_Memory::MemoryProtector* C_Memory::MemoryProtector::Detach(void* ptr)
 {
@@ -133,6 +128,7 @@ C_Memory::MemoryPoolBase::~MemoryPoolBase() {}
 void* C_Memory::PoolManager::Alloc(uint size)
 {
 	const uint allocSize = size + sizeof(MemoryProtector) + MemoryProtector::_rightGuardSpace;
+	//const uint allocSize = size + sizeof(MemoryHeader);
 
 	void* ptr;
 	if (allocSize > MAX_ALLOC_SIZE)
@@ -150,12 +146,14 @@ void* C_Memory::PoolManager::Alloc(uint size)
 		TODO_TLS_LOG_ERROR;
 		std::cout << "Ptr is Null!!!!!!!\n";
 	}
+	//return MemoryHeader::Attach(static_cast<MemoryHeader*>(ptr), allocSize);
 	return MemoryProtector::Attach(ptr, allocSize);
 }
 
 void C_Memory::PoolManager::Free(void* ptr)
 {
 	MemoryProtector* base = MemoryProtector::Detach(ptr);
+	//MemoryHeader* base = MemoryHeader::Detach(ptr);
 	uint allocSize = base->GetSize();
 
 	if (allocSize > MAX_ALLOC_SIZE)

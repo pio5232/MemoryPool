@@ -22,9 +22,10 @@ namespace C_Memory
 
 		POOL_COUNT_TO_LEVEL_2 = POOL_COUNT_LEVEL_1 + POOL_COUNT_LEVEL_2,
 		POOL_COUNT_TO_LEVEL_3 = POOL_COUNT_LEVEL_1 + POOL_COUNT_LEVEL_2 + POOL_COUNT_LEVEL_3,
-		
-		EXTRA_CHUNK_MOVE_SIZE = 200,
-		MEMORY_ALLOC_SIZE = 4000, // 
+
+		MEMORY_ALLOC_SIZE = 2000, //
+		EXTRA_CHUNK_MOVE_SIZE = MEMORY_ALLOC_SIZE / 4,
+		EXTRA_MEMORY_ALLOC_SIZE = MEMORY_ALLOC_SIZE / 10,
 		MAX_ALLOC_SIZE = 4096
 	};
 
@@ -34,35 +35,84 @@ namespace C_Memory
 	};
 
 
+	//------------------------------------------- For Test -----------------------------------------------
+	class MemoryHeader
+	{
+	public:
+		MemoryHeader(uint size) : _size(size) {}
+		static inline void* Attach(MemoryHeader* header, uint size)
+		{
+			new (header) MemoryHeader(size);
+
+			return static_cast<void*>(++header);
+		}
+
+		static inline MemoryHeader* Detach(void* ptr)
+		{
+			MemoryHeader* pMH = static_cast<MemoryHeader*>(ptr);
+
+			return --pMH;
+		}
+
+		inline uint GetSize() const { return _size; }
+
+		uint _size;
+	};
+
+	//-----------------------------------------------------------------------------------------------------
+
 	class PoolInfo
 	{
 	public:
+		static void Init()
+		{
+			uint size = 0;
+			uint tableIndex = 0;
+
+			for (size = 32; size <= 1024; size += 32)
+			{
+				while (tableIndex <= size)
+				{
+					if(tableIndex == size)
+						_poolTable[tableIndex] = size / POOL_SIZE_LEVEL_1;
+					else
+						_poolTable[tableIndex] = (size + POOL_SIZE_LEVEL_1) / POOL_SIZE_LEVEL_1 - 1;
+
+					tableIndex++;
+				}
+			}
+
+			size -= 1024;
+			for (; size <= 1024; size += 128)
+			{
+				while (tableIndex <= size)
+				{
+					if (tableIndex == size)
+						_poolTable[tableIndex] = POOL_COUNT_LEVEL_1 + size / POOL_SIZE_LEVEL_2 - 1;
+					else
+						_poolTable[tableIndex] = POOL_COUNT_LEVEL_1 + (size + POOL_SIZE_LEVEL_2) / POOL_SIZE_LEVEL_2 - 1;
+
+					tableIndex++;
+				}
+			}
+			size -= 1024;
+
+			for (; size <= 2048; size += 256)
+			{
+				while (tableIndex <= size)
+				{
+					if (tableIndex == size)
+						_poolTable[tableIndex] = POOL_COUNT_TO_LEVEL_2 + size / POOL_SIZE_LEVEL_3 - 1;
+					else
+						_poolTable[tableIndex] = POOL_COUNT_TO_LEVEL_2 + (size + POOL_SIZE_LEVEL_3) / POOL_SIZE_LEVEL_3 - 1;
+
+					tableIndex++;
+				}
+			}
+		}
 		static inline uint GetPoolIndex(uint size)
 		{
-			// if vs O(1) hash 비교 필요
-			if (size <= 1024)
-			{
-				if (size % POOL_SIZE_LEVEL_1 == 0)
-					return size / POOL_SIZE_LEVEL_1;
-
-				return (size + POOL_SIZE_LEVEL_1) / POOL_SIZE_LEVEL_1 - 1;
-			}
-
-			size -= 1024;
-			if (size <= 1024)
-			{
-				if (size % POOL_SIZE_LEVEL_2 == 0)
-					return size / POOL_SIZE_LEVEL_2;
-
-				return POOL_COUNT_LEVEL_1 + (size + POOL_SIZE_LEVEL_2) / POOL_SIZE_LEVEL_2 - 1;
-			}
-
-			size -= 1024;
-
-			if (size % POOL_SIZE_LEVEL_3 == 0)
-				return size / POOL_SIZE_LEVEL_3;
-
-			return POOL_COUNT_TO_LEVEL_2 + (size + POOL_SIZE_LEVEL_3) / POOL_SIZE_LEVEL_3 - 1;
+			return _poolTable[size];
 		}
 
 		// MemoryPool을 template으로 만들다보니 placement로 호출하게하는 클래스의 타입도 template으로 할 수 있게 만들어야하지만 
@@ -74,7 +124,9 @@ namespace C_Memory
 			1024 + 128 * 1, 1024 + 128 * 2, 1024 + 128 * 3, 1024 + 128 * 4, 1024 + 128 * 5, 1024 + 128 * 6, 1024 + 128 * 7, 1024 + 128 * 8,
 			2048 + 256 * 1, 2048 + 256 * 2, 2048 + 256 * 3, 2048 + 256 * 4, 2048 + 256 * 5, 2048 + 256 * 6, 2048 + 256 * 7, 2048 + 256 * 8
 		};
+		static uint _poolTable[MAX_ALLOC_SIZE + 1];
 	};
+
 	/*--------------------------
 		   MemoryProtector
 	--------------------------*/
@@ -89,7 +141,7 @@ namespace C_Memory
 
 		inline uint GetSize() const { return _size; }
 
-		static constexpr uint _rightGuardSpace = sizeof(MemoryGuard) + sizeof(void*);
+		static constexpr uint _rightGuardSpace = sizeof(MemoryGuard);// +sizeof(void*);
 	private:
 		uint _size; // header->size
 
@@ -134,12 +186,7 @@ namespace C_Memory
 				--_size;
 			}
 
-			if (_size == 0)
-			{
-				//std::cout << "NodeChunk Size is 0 ~ Destructor call successed\n";
-				TODO_TLS_LOG_SUCCESS;
-			}
-			else
+			if(_size)
 			{
 				std::cout << "NodeChunk Size is Not 0 - Error\n";
 
@@ -270,7 +317,12 @@ namespace C_Memory
 				}
 			}
 			
-			return _aligned_malloc(AllocSize, 64);
+			for (uint i = 0; i < EXTRA_MEMORY_ALLOC_SIZE; i++)
+			{
+				_pInnerChunk->Regist(_aligned_malloc(AllocSize, 64));
+			}
+			return _pInnerChunk->Export();
+			//return _aligned_malloc(AllocSize, 64);
 		}
 
 		void Free(void* ptr) override
@@ -314,6 +366,8 @@ namespace C_Memory
 
 		PoolManager();
 		~PoolManager();
+
+		void Nothing() {};
 
 	private:
 		MemoryPoolBase* _pools[POOL_COUNT_TO_LEVEL_3];
